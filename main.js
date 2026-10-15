@@ -4571,6 +4571,22 @@ function collectItems(app, rootPath) {
   return items;
 }
 
+// Markdown notes in the room the metadata cache has not read yet. While this
+// is above zero, collectItems cannot see every item, so an open task whose
+// note is one of these looks new; a sync pass then writes no new note.
+function unindexedNoteCount(app, rootPath) {
+  const root = app.vault.getAbstractFileByPath(rootPath);
+  let n = 0;
+  const walk = (folder) => {
+    for (const child of folder.children || []) {
+      if (child instanceof TFolder) walk(child);
+      else if (child instanceof TFile && child.extension === 'md' && !app.metadataCache.getFileCache(child)) n += 1;
+    }
+  };
+  if (root instanceof TFolder) walk(root);
+  return n;
+}
+
 // effective completion: struck when locally checked OR the source closed it
 function isDone(item) { return item.doneLocal || item.status === 'done'; }
 
@@ -7432,6 +7448,9 @@ class IcorPlannerPlugin extends Plugin {
     const folder = this.paths().sourceFolder(source);
     const s = this.withSecrets(); // shallow: s._shadow is the live map
     const allItems = collectItems(this.app, this.paths().root);
+    // A cold metadata cache (first open on a new device) hides notes that
+    // exist, so this pass creates nothing; the next sync does.
+    const cacheCold = unindexedNoteCount(this.app, this.paths().root) > 0;
     const existing = new Map(); // external id -> item
     for (const it of allItems) {
       if (it.source === source) existing.set(it.id, it);
@@ -7468,6 +7487,7 @@ class IcorPlannerPlugin extends Plugin {
       openIds.add(t.id);
       const prior = existing.get(t.id);
       if (!prior) {
+        if (cacheCold) continue;
         await this.createItemFile(folder, source, t);
         const fresh = s._shadow[`${source}:${t.id}`];
         if (fresh) {
@@ -12142,7 +12162,7 @@ module.exports.__test = {
   NEXT_URGENT_MS, NEXT_SECONDS_MS, NEXT_STRIP_LOGO_HOST, NEXT_STRIP_SPLIT_HOST,
   plannerToolbarMountPoint, PLANNER_TOOLBAR_HOST, PLANNER_TOOLBAR_CLASS, PLANNER_TOOLBAR_ICON, PLANNER_TOOLBAR_LABEL,
   CONFERENCE_URL_PATTERNS,
-  plannerPaths, normalizePlannerFolder, detectPlannerFolder, plannerFolderChangePlan, gitignoreLineFor, collectItems,
+  plannerPaths, normalizePlannerFolder, detectPlannerFolder, plannerFolderChangePlan, gitignoreLineFor, collectItems, unindexedNoteCount,
   zonedToUtc, tzOffsetMinutes, hmToMin, lunchBandHeight,
   WINDOWS_TZ_TO_IANA, normalizeTzid, isIanaZone, resolveTzid, tzidUtcPrefixOffset,
   icsUtcOffsetToMinutes, ianaForOffsets, calendarTzWarning, degraded, okResult, truncatedWarning,
