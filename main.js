@@ -7984,7 +7984,8 @@ class IcorPlannerPlugin extends Plugin {
   async createItemFile(folder, source, t) {
     let base = `${safeBasename(t.title)} (${source}-${noteIdPart(t.id)})`;
     let path = normalizePath(`${folder}/${base}.md`);
-    if (this.app.vault.getAbstractFileByPath(path)) {
+    const copy = !!this.app.vault.getAbstractFileByPath(path);
+    if (copy) {
       path = normalizePath(`${folder}/${base}-2.md`);
     }
     const fmLines = [
@@ -8016,9 +8017,15 @@ class IcorPlannerPlugin extends Plugin {
     const body = (t.description || '').trim();
     try {
       const created = await this.app.vault.create(path, fmLines.join('\n') + (body ? body + '\n' : ''));
-      this.settings._shadow[`${source}:${t.id}`] = {
-        due: t.due || null, priority: t.priority, description: body, done: false,
-      };
+      // A copy beside a note this pass could not read leaves that note's
+      // baseline alone: re-seeding it from the source would make the old
+      // note's values read as local edits on the next sync.
+      const key = `${source}:${t.id}`;
+      if (!copy || !this.settings._shadow[key]) {
+        this.settings._shadow[key] = {
+          due: t.due || null, priority: t.priority, description: body, done: false,
+        };
+      }
       this.markSyncWrite(created || path);
     } catch { /* a race with another writer - the next sync settles it */ }
   }
